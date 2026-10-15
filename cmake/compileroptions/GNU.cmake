@@ -31,6 +31,24 @@ if(EXISTS "/proc/sys/abi/sve_default_vector_length")
   add_flag(CMAKE_C_FLAGS "-msve-vector-bits=${SVE_LENGTH}")
 endif()
 
+# RISC-V Vector extension (RVV 1.0). Mirrors the SVE handling above:
+# always request the V extension; in fixed-length (VLS) mode additionally pin the
+# vector width so the compiler treats the scalable types as fixed-size. In VLA mode
+# only the Zvl floor goes into -march, never -mrvv-vector-bits.
+if(WALBERLA_RISCV_RVV)
+  set(_rvv_march "rv64gcv")
+  if(WALBERLA_RVV_VLEN)
+    set(_rvv_march "${_rvv_march}_zvl${WALBERLA_RVV_VLEN}b")
+  endif()
+  add_flag(CMAKE_CXX_FLAGS "-march=${_rvv_march}")
+  add_flag(CMAKE_C_FLAGS "-march=${_rvv_march}")
+  string(TOLOWER "${WALBERLA_RVV_MODE}" _rvv_mode_lc)
+  if(_rvv_mode_lc STREQUAL "fixed" AND WALBERLA_RVV_VLEN)
+    add_flag(CMAKE_CXX_FLAGS "-mrvv-vector-bits=zvl")
+    add_flag(CMAKE_C_FLAGS "-mrvv-vector-bits=zvl")
+  endif()
+endif()
+
 # Warning flags
 add_flag(CMAKE_CXX_FLAGS "-Wfloat-equal -Wextra")
 

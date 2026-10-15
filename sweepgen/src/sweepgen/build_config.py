@@ -70,6 +70,15 @@ class WalberlaBuildConfig:
     override: ConfigOverrides = field(default_factory=ConfigOverrides)
     """Override code generator options that would otherwise be inferred from the build system."""
 
+    rvv_enabled: bool = False
+    """Value of ``WALBERLA_RISCV_RVV``. Selects the `Target.RISCV_RVV` backend."""
+
+    rvv_vlen: int = 128
+    """Value of ``WALBERLA_RVV_VLEN``: assumed (VLS) / minimum (VLA) VLEN in bits."""
+
+    rvv_mode: str = "vla"
+    """Value of ``WALBERLA_RVV_MODE``: ``"fixed"`` (VLS) or ``"vla"`` (stripmine)."""
+
     @staticmethod
     def from_sfg(sfg: SfgContext | SfgIComposer) -> WalberlaBuildConfig:
         """Retrieve the build configuration object from the pystencils-sfg session context."""
@@ -97,6 +106,8 @@ class WalberlaBuildConfig:
             target = Target.CUDA
         elif self.hip_enabled:
             target = Target.HIP
+        elif self.rvv_enabled:
+            target = Target.RISCV_RVV
         else:
             #  CPU target
             if self.optimize_for_localhost:
@@ -127,6 +138,15 @@ class WalberlaBuildConfig:
 
         if self.openmp_enabled:
             cfg.cpu.openmp.enable = True
+
+        if cfg.target == Target.RISCV_RVV:
+            cfg.cpu.vectorize.enable = True
+            cfg.cpu.vectorize.assume_inner_stride_one = True
+            cfg.cpu.vectorize.mode = self.rvv_mode
+            cfg.cpu.rvv.vlen = self.rvv_vlen
+            if self.rvv_mode == "fixed":
+                width = 64 if self.use_double_precision else 32
+                cfg.cpu.vectorize.lanes = self.rvv_vlen // width
 
         return cfg
 

@@ -22,6 +22,9 @@ def project_info() -> WalberlaBuildConfig:
         cuda_enabled=cmake_parse_bool("${WALBERLA_BUILD_WITH_CUDA}"),
         hip_enabled=cmake_parse_bool("${WALBERLA_BUILD_WITH_HIP}"),
         likwid_enabled=cmake_parse_bool("${WALBERLA_BUILD_WITH_LIKWID_MARKERS}"),
+        rvv_enabled=cmake_parse_bool("${WALBERLA_RISCV_RVV}"),
+        rvv_vlen=int("${WALBERLA_RVV_VLEN}" or "128"),
+        rvv_mode=("${WALBERLA_RVV_MODE}" or "vla").lower(),
     )
 
 

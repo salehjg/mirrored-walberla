@@ -95,6 +95,11 @@ option ( WALBERLA_PROFILE_USE               "Uses Profile to optimize"          
 # Compiler Optimization
 option ( WALBERLA_OPTIMIZE_FOR_LOCALHOST    "Enable compiler optimizations spcific to localhost" )
 
+# RISC-V Vector extension (RVV 1.0) code generation
+option ( WALBERLA_RISCV_RVV                 "Generate kernels for the RISC-V V extension (RVV 1.0)" OFF )
+set    ( WALBERLA_RVV_VLEN "128" CACHE STRING "Assumed (VLS) / minimum (VLA) RVV VLEN in bits" )
+set    ( WALBERLA_RVV_MODE "vla" CACHE STRING "RVV vectorization mode: 'fixed' (VLS) or 'vla' (stripmine)" )
+
 option ( WALBERLA_LOG_SKIPPED               "Log skipped cmake targets"                      ON  )
 option ( WALBERLA_DEPS_ERROR                "Fail if module dependencies are not met"        OFF )
 
