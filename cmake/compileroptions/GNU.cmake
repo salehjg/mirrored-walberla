@@ -20,7 +20,18 @@ endif()
 
 # architecture optimization
 if(WALBERLA_OPTIMIZE_FOR_LOCALHOST)
-  add_flag(CMAKE_CXX_FLAGS "-march=native")
+  if(CMAKE_SYSTEM_PROCESSOR STREQUAL "riscv64")
+    # GCC rejects -march=native on RISC-V. Mirror pystencils' `Target.CurrentCPU`:
+    # with the V extension, use the flags of its RVV backend (VLS code for VLEN = 256).
+    file(STRINGS /proc/cpuinfo _riscv_isa REGEX "^isa" LIMIT_COUNT 1)
+    if(_riscv_isa MATCHES "rv64[a-z]*v")
+      add_flag(CMAKE_CXX_FLAGS "-march=rv64gcv_zvl256b")
+    else()
+      add_flag(CMAKE_CXX_FLAGS "-march=rv64gc")
+    endif()
+  else()
+    add_flag(CMAKE_CXX_FLAGS "-march=native")
+  endif()
 endif()
 
 if(EXISTS "/proc/sys/abi/sve_default_vector_length")
@@ -29,24 +40,6 @@ if(EXISTS "/proc/sys/abi/sve_default_vector_length")
   math(EXPR SVE_LENGTH "${SVE_LENGTH_BYTES} * 8")
   add_flag(CMAKE_CXX_FLAGS "-msve-vector-bits=${SVE_LENGTH}")
   add_flag(CMAKE_C_FLAGS "-msve-vector-bits=${SVE_LENGTH}")
-endif()
-
-# RISC-V Vector extension (RVV 1.0). Mirrors the SVE handling above:
-# always request the V extension; in fixed-length (VLS) mode additionally pin the
-# vector width so the compiler treats the scalable types as fixed-size. In VLA mode
-# only the Zvl floor goes into -march, never -mrvv-vector-bits.
-if(WALBERLA_RISCV_RVV)
-  set(_rvv_march "rv64gcv")
-  if(WALBERLA_RVV_VLEN)
-    set(_rvv_march "${_rvv_march}_zvl${WALBERLA_RVV_VLEN}b")
-  endif()
-  add_flag(CMAKE_CXX_FLAGS "-march=${_rvv_march}")
-  add_flag(CMAKE_C_FLAGS "-march=${_rvv_march}")
-  string(TOLOWER "${WALBERLA_RVV_MODE}" _rvv_mode_lc)
-  if(_rvv_mode_lc STREQUAL "fixed" AND WALBERLA_RVV_VLEN)
-    add_flag(CMAKE_CXX_FLAGS "-mrvv-vector-bits=zvl")
-    add_flag(CMAKE_C_FLAGS "-mrvv-vector-bits=zvl")
-  endif()
 endif()
 
 # Warning flags

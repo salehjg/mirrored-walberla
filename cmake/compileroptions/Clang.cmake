@@ -19,6 +19,17 @@ if(WALBERLA_OPTIMIZE_FOR_LOCALHOST)
      AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
     # no -march=native available on this compiler, but there is currently only
     # one such processor
+  elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "riscv64")
+    # Mirror pystencils' `Target.CurrentCPU` on RISC-V: with the V extension, use the
+    # flags of its RVV backend (VLS code for VLEN = 256).
+    file(STRINGS /proc/cpuinfo _riscv_isa REGEX "^isa" LIMIT_COUNT 1)
+    if(_riscv_isa MATCHES "rv64[a-z]*v")
+      set(_riscv_march "-march=rv64gcv_zvl256b")
+    else()
+      set(_riscv_march "-march=rv64gc")
+    endif()
+    add_flag(CMAKE_CXX_FLAGS "${_riscv_march}")
+    add_flag(CMAKE_C_FLAGS "${_riscv_march}")
   else()
     add_flag(CMAKE_CXX_FLAGS "-march=native")
     add_flag(CMAKE_C_FLAGS "-march=native")
