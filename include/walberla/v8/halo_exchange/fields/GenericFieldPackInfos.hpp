@@ -64,7 +64,9 @@ class GenericFieldPackInfo
 
    void pack(const IBlock& srcBlock, stencil::Direction commDir, stdlib::span< value_type > buffer, XTag xtag) const
    {
-      const ConstFieldView srcView{ field_, srcBlock };
+      //  Explicit type instead of deducing the alias template `ConstFieldView`:
+      //  Clang < 19 does not implement C++20 alias template argument deduction
+      const memory::ConstFieldViewType< FieldType > srcView{ field_, srcBlock };
       const CellInterval srcRegion{ srcView.slices().borderSlice(commDir, numGhostLayers_) };
 
       constexpr size_t valuesPerCell{ F_SIZE };
@@ -107,7 +109,9 @@ class GenericFieldPackInfo
 
    void localCopy(const IBlock& srcBlock, stencil::Direction commDir, IBlock& dstBlock, XTag xtag) const
    {
-      const ConstFieldView srcView{ field_, srcBlock };
+      //  Explicit type instead of deducing the alias template `ConstFieldView`:
+      //  Clang < 19 does not implement C++20 alias template argument deduction
+      const memory::ConstFieldViewType< FieldType > srcView{ field_, srcBlock };
       const CellInterval srcRegion{ srcView.slices().borderSlice(commDir, numGhostLayers_) };
 
       const FieldView dstView{ field_, dstBlock };
@@ -153,7 +157,9 @@ class GenericStreamPullPackInfo
 
    void pack(const IBlock& srcBlock, stencil::Direction commDir, stdlib::span< value_type > buffer, XTag xtag) const
    {
-      const ConstFieldView srcView{ field_, srcBlock };
+      //  Explicit type instead of deducing the alias template `ConstFieldView`:
+      //  Clang < 19 does not implement C++20 alias template argument deduction
+      const memory::ConstFieldViewType< FieldType > srcView{ field_, srcBlock };
       const CellInterval srcRegion{ srcView.slices().borderSlice(commDir, 1) };
 
       sweep::forAllCells(xtag, srcRegion, [=] WALBERLA_HOST_DEVICE (Cell cell) {
@@ -197,7 +203,9 @@ class GenericStreamPullPackInfo
 
    void localCopy(const IBlock& srcBlock, stencil::Direction commDir, IBlock& dstBlock, XTag xtag) const
    {
-      const ConstFieldView srcView{ field_, srcBlock };
+      //  Explicit type instead of deducing the alias template `ConstFieldView`:
+      //  Clang < 19 does not implement C++20 alias template argument deduction
+      const memory::ConstFieldViewType< FieldType > srcView{ field_, srcBlock };
       const CellInterval srcRegion{ srcView.slices().borderSlice(commDir, 1) };
 
       const FieldView dstView{ field_, dstBlock };
