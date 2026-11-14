@@ -8,15 +8,24 @@
 #              RVV intrinsics on the SpacemiT K1, AVX on x86
 #
 #  Each variant is also built with lbmpy's global CSE (suffix _cse; see SweepgenLbmCPU.py).
+#  The explicit variant is also built with software prefetching, 128 bytes ahead (suffix _pf).
 #  Run: SweepgenLbmCPU_<variant>[_cse] [cells per direction] [timesteps] [warmup]
 
-foreach( _variant scalar autovec explicit )
+foreach( _variant scalar autovec explicit explicit_pf )
    foreach( _cse default cse )
-      set( _target SweepgenLbmCPU_${_variant} )
-      set( _scriptArgs --variant=${_variant} )
+      if( _variant STREQUAL "explicit_pf" )
+         set( _target SweepgenLbmCPU_explicit )
+         set( _scriptArgs --variant=explicit --prefetch-distance=128 )
+      else()
+         set( _target SweepgenLbmCPU_${_variant} )
+         set( _scriptArgs --variant=${_variant} )
+      endif()
       if( _cse STREQUAL "cse" )
          set( _target ${_target}_cse )
          list( APPEND _scriptArgs --cse-global )
+      endif()
+      if( _variant STREQUAL "explicit_pf" )
+         set( _target ${_target}_pf )
       endif()
 
       add_executable( ${_target} SweepgenLbmCPU.cpp )

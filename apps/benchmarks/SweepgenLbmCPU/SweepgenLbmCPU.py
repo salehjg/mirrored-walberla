@@ -27,6 +27,11 @@ separate executables and compared on the same machine:
 --cse-global also runs a global common-subexpression elimination over the update rule
 (lbmpy's `cse_global`). Without it the sweep repeats many subterms. Compilers remove the
 repeats from scalar code, but GCC does not remove repeated RVV intrinsic calls.
+
+--prefetch-distance N (explicit variant only) makes the vector loop prefetch every field
+access N bytes ahead (`cpu.vectorize.prefetch_distance`). The D3Q19 sweep has 19 read and
+23 write streams, more than the hardware prefetcher of the SpacemiT X60 follows; without
+help every cache miss costs a full DRAM latency (docs/notes3 in the outer repository).
 """
 
 import argparse
@@ -49,6 +54,7 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", choices=("scalar", "autovec", "explicit"), required=True)
     parser.add_argument("--cse-global", action="store_true")
+    parser.add_argument("--prefetch-distance", type=int, default=None)
     #   For generating the explicit variant on another machine (e.g. RISCV_RVV on x86)
     parser.add_argument("--explicit-target", default="CurrentCPU")
     args = parser.parse_args(sfg.context.argv)
@@ -63,6 +69,10 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
         #   waLBerla fields are fzyx with x fastest, so the innermost loop has stride 1:
         #   the same contract the AVX backend relies on
         lbm_gen_config.cpu.vectorize.assume_inner_stride_one = True
+        if args.prefetch_distance:
+            lbm_gen_config.cpu.vectorize.prefetch_distance = args.prefetch_distance
+    elif args.prefetch_distance:
+        raise ValueError("--prefetch-distance needs the explicit variant")
     else:
         lbm_gen_config = ps.CreateKernelConfig(target=ps.Target.GenericCPU)
 
