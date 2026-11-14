@@ -23,6 +23,7 @@
 #include "walberla/v8/Testing.hpp"
 
 // Scenarios
+#include "AAMatchesPull.hpp"
 #include "FreeSlipPipe.hpp"
 #include "FullyPeriodic.hpp"
 #include "MirroredHalfChannel.hpp"
@@ -49,6 +50,7 @@ int main(int argc, char** argv)
    return walberla::v8::testing::TestsRunner( //
              {
                 { "FullyPeriodic", &FullyPeriodic< MemoryTag >::run },
+                { "AAMatchesPull", &AAMatchesPull< MemoryTag >::run },
                 { "MirroredHalfChannel", &MirroredHalfChannel< MemoryTag >::run },
                 { "FreeSlipPipe", &FreeSlipPipe< MemoryTag >::run },
              })

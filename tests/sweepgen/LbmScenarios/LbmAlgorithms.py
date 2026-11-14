@@ -79,6 +79,17 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
 
     sfg.generate(lb_bulk)
 
+    #   The same method with in-place AA streaming (one PDF field), for the AAMatchesPull scenario
+    lbm_config_aa = LBMConfig(
+        stencil=stencil,
+        method=Method.TRT,
+        output={"density": rho, "velocity": u},
+        force=force,
+        force_model=ForceModel.HE,
+        streaming_pattern="aa",
+    )
+    sfg.generate(LbmBulk(sfg, "LBM_AA", lbm_config_aa, LBMOptimisation(symbolic_field=f)))
+
     with sfg.namespace("bc_grid_aligned"):
         sfg.generate(GridAlignedNoSlip("NoSlipTop", lb_bulk.lb_method, f, wall_orientation=(0, 0, 1)))
 

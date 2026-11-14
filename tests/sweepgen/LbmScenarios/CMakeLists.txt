@@ -11,6 +11,7 @@ endif()
 
 set( TestIDs 
     FullyPeriodic
+    AAMatchesPull
     MirroredHalfChannel
     FreeSlipPipe
 )
@@ -29,6 +30,7 @@ foreach(_testLanguage ${_testLanguages})
         ${_testTarget} PRIVATE
         FILE_SET HEADERS
         FILES FullyPeriodic.hpp
+              AAMatchesPull.hpp
               MirroredHalfChannel.hpp
     )
     

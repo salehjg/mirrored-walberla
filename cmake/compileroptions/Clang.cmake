@@ -30,6 +30,20 @@ if(WALBERLA_OPTIMIZE_FOR_LOCALHOST)
     endif()
     add_flag(CMAKE_CXX_FLAGS "${_riscv_march}")
     add_flag(CMAKE_C_FLAGS "${_riscv_march}")
+    # Tune for the host core when the compiler knows it: /proc/cpuinfo names it as
+    # `uarch : vendor,core` (spacemit,x60 -> -mtune=spacemit-x60). Neither GCC 14 nor Clang 18
+    # derive it from -mtune=native. The scheduling model matters on in-order cores such as the
+    # SpacemiT X60 (docs/notes3 in the outer repository).
+    file(STRINGS /proc/cpuinfo _riscv_uarch REGEX "^uarch" LIMIT_COUNT 1)
+    if(_riscv_uarch MATCHES "^uarch[ \t]*:[ \t]*([a-z0-9_-]+),([a-z0-9_-]+)")
+      set(_riscv_tune "-mtune=${CMAKE_MATCH_1}-${CMAKE_MATCH_2}")
+      include(CheckCXXCompilerFlag)
+      check_cxx_compiler_flag("${_riscv_tune}" WALBERLA_CXX_SUPPORTS_RISCV_HOST_TUNE)
+      if(WALBERLA_CXX_SUPPORTS_RISCV_HOST_TUNE)
+        add_flag(CMAKE_CXX_FLAGS "${_riscv_tune}")
+        add_flag(CMAKE_C_FLAGS "${_riscv_tune}")
+      endif()
+    endif()
   else()
     add_flag(CMAKE_CXX_FLAGS "-march=native")
     add_flag(CMAKE_C_FLAGS "-march=native")

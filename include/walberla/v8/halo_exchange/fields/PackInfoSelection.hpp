@@ -74,9 +74,68 @@ struct _StreamPullSyncFactory
 #endif
 
 };
+
+template< typename TStencil >
+struct _AAPullSyncFactory
+{
+   template< IField TField >
+      requires(std::same_as< typename TField::memory_tag, memtag::stdmem > ||
+               std::same_as< typename TField::memory_tag, memtag::host >)
+   auto operator()(const TField& field)
+   {
+      return fields::GenericAAPullPackInfo< TField, TStencil, exectag::Serial >{ field };
+   }
+
+#if defined(WALBERLA_BUILD_WITH_GPU_SUPPORT)
+   template< IField TField >
+      requires(std::same_as< typename TField::memory_tag, memtag::device > ||
+               std::same_as< typename TField::memory_tag, memtag::unified >)
+   auto operator()(const TField& field)
+   {
+      return fields::GenericAAPullPackInfo< TField, TStencil, exectag::GPU >{ field };
+   }
+#endif
+};
+
+template< typename TStencil >
+struct _AAPushSyncFactory
+{
+   template< IField TField >
+      requires(std::same_as< typename TField::memory_tag, memtag::stdmem > ||
+               std::same_as< typename TField::memory_tag, memtag::host >)
+   auto operator()(const TField& field)
+   {
+      return fields::GenericAAPushPackInfo< TField, TStencil, exectag::Serial >{ field };
+   }
+
+#if defined(WALBERLA_BUILD_WITH_GPU_SUPPORT)
+   template< IField TField >
+      requires(std::same_as< typename TField::memory_tag, memtag::device > ||
+               std::same_as< typename TField::memory_tag, memtag::unified >)
+   auto operator()(const TField& field)
+   {
+      return fields::GenericAAPushPackInfo< TField, TStencil, exectag::GPU >{ field };
+   }
+#endif
+};
+
 } // namespace detail
 
 template< typename TStencil >
 inline detail::_StreamPullSyncFactory< TStencil > streamPullSync;
+
+/**
+ * In-place AA streaming pattern: ghost-layer exchange after every even time step (before the odd step),
+ * see fields::GenericAAPullPackInfo.
+ */
+template< typename TStencil >
+inline detail::_AAPullSyncFactory< TStencil > aaPullSync;
+
+/**
+ * In-place AA streaming pattern: ghost-layer exchange after every odd time step (before the even step),
+ * see fields::GenericAAPushPackInfo.
+ */
+template< typename TStencil >
+inline detail::_AAPushSyncFactory< TStencil > aaPushSync;
 
 } // namespace walberla::v8::halo_exchange

@@ -37,6 +37,7 @@
 #include "stencil/all.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 
 #include "gen/SweepgenLbmCPU.hpp"
@@ -91,6 +92,12 @@ void run(int argc, char** argv)
    const real_t tau{ real_c(nu / (1. / 3.)) };
    const real_t omega{ real_c(2. / (2. * tau + 1.)) };
 
+   //  SWEEPGEN_LBM_OUTPUT=last: only the last time step writes rho and u (the checksum reads u
+   //  after the loop); all others use the sweeps without density/velocity output. Default: every
+   //  step writes them.
+   const char* outputEnv{ std::getenv("SWEEPGEN_LBM_OUTPUT") };
+   const bool outputEveryStep{ outputEnv == nullptr || std::strcmp(outputEnv, "last") != 0 };
+
    gen::SetInitialState setInitialState{ blocks, rho, u, delta, kappa, u_0 };
    gen::LBM::InitPdfs lbInit{ pdfs, rho, u };
    for (auto& b : *blocks)
@@ -99,30 +106,77 @@ void run(int argc, char** argv)
       lbInit(&b);
    }
 
+#if defined(SWEEPGEN_LBM_AA)
+   //  In-place AA streaming: even and odd sweeps alternate on the one PDF field, starting with
+   //  an even sweep on the PDFs InitPdfs wrote. The even sweep stays inside each cell; the odd
+   //  sweep reads from and writes to the neighbors, so the ghost layers are filled after the
+   //  even sweep (aaPullSync) and their writes returned to the owners after the odd one (aaPushSync).
+   gen::LBM::StreamCollideEven streamCollideEven{ pdfs, rho, u, omega };
+   gen::LBM::StreamCollideOdd streamCollideOdd{ pdfs, rho, u, omega };
+   gen::LBM::StreamCollideEvenNoOutput streamCollideEvenNoOutput{ pdfs, omega };
+   gen::LBM::StreamCollideOddNoOutput streamCollideOddNoOutput{ pdfs, omega };
+#   if defined(SWEEPGEN_LBM_SPLIT)
+   //  The direction-split stream/collide (SweepgenLbmCPU.py --split) instead of the sweeps above
+   auto streamCollideSplit = [&](IBlock& b, bool odd, bool output) {
+      const memory::BufferView< real_t, 4, MemoryTag > fv{ pdfs.bufferSystem().view(b) };
+      const memory::BufferView< real_t, 4, MemoryTag > rv{ rho.bufferSystem().view(b) };
+      const memory::BufferView< real_t, 4, MemoryTag > uv{ u.bufferSystem().view(b) };
+      gen::LBM_SPLIT::streamCollide(fv.data(), rv.data(), uv.data(), int64_t(fv.shape()[0]), int64_t(fv.shape()[1]),
+                                    int64_t(fv.shape()[2]), int64_t(fv.strides()[1]), int64_t(fv.strides()[2]),
+                                    int64_t(fv.strides()[3]), int64_t(rv.strides()[1]), int64_t(rv.strides()[2]),
+                                    int64_t(uv.strides()[1]), int64_t(uv.strides()[2]), int64_t(uv.strides()[3]), odd,
+                                    output, omega);
+   };
+#   endif
+   auto aaPull =
+      HaloExchange::create< LbStencil, MemoryTag >(blocks).sync(halo_exchange::aaPullSync< LbStencil >(pdfs)).build();
+   auto aaPush =
+      HaloExchange::create< LbStencil, MemoryTag >(blocks).sync(halo_exchange::aaPushSync< LbStencil >(pdfs)).build();
+   bool oddStep{ false };
+
+   auto timestep = [&](bool output) {
+      for (auto& b : *blocks)
+      {
+#   if defined(SWEEPGEN_LBM_SPLIT)
+         streamCollideSplit(b, oddStep, output);
+#   else
+         if (oddStep) { output ? streamCollideOdd(&b) : streamCollideOddNoOutput(&b); }
+         else { output ? streamCollideEven(&b) : streamCollideEvenNoOutput(&b); }
+#   endif
+      }
+      if (oddStep) { aaPush(); }
+      else { aaPull(); }
+      oddStep = !oddStep;
+      sweep::sync();
+   };
+#else
    gen::LBM::StreamCollide streamCollide{ pdfs, rho, u, omega };
+   gen::LBM::StreamCollideNoOutput streamCollideNoOutput{ pdfs, omega };
    auto haloExchange =
       HaloExchange::create< LbStencil, MemoryTag >(blocks).sync(halo_exchange::streamPullSync< LbStencil >(pdfs)).build();
 
-   //  The pull stream reads the ghost layers, so they must be filled before the first step
-   haloExchange();
+   //  No ghost-layer exchange before the first step: InitPdfs places the pre-collision PDF of
+   //  direction i of cell x in slot i of cell x - c_i, so the ghost layers already hold what the first
+   //  pull reads. An exchange would overwrite them with border slots that nothing has written.
 
-   auto timestep = [&]() {
+   auto timestep = [&](bool output) {
       for (auto& b : *blocks)
       {
-         streamCollide(&b);
+         output ? streamCollide(&b) : streamCollideNoOutput(&b);
       }
       haloExchange();
       sweep::sync();
    };
+#endif
 
    for (uint_t t = 0; t < warmup; ++t)
-      timestep();
+      timestep(outputEveryStep);
 
    WcTimer timer;
    WALBERLA_MPI_BARRIER()
    timer.start();
    for (uint_t t = 0; t < timesteps; ++t)
-      timestep();
+      timestep(outputEveryStep || t + 1 == timesteps);
    WALBERLA_MPI_BARRIER()
    timer.end();
 
@@ -147,7 +201,8 @@ void run(int argc, char** argv)
       std::cout.precision(12);
       std::cout << "SweepgenLbmCPU variant=" << SWEEPGEN_LBM_VARIANT << " real_t=" << sizeof(real_t) * 8
                 << " cells=" << totalCells
-                << " steps=" << timesteps << " seconds=" << seconds
+                << " steps=" << timesteps << " output=" << (outputEveryStep ? "every" : "last")
+                << " seconds=" << seconds
                 << " mlups=" << real_c(totalCells * timesteps) / seconds / 1e6 << " energy=" << energy << std::endl;
    }
 }

@@ -32,6 +32,21 @@ repeats from scalar code, but GCC does not remove repeated RVV intrinsic calls.
 access N bytes ahead (`cpu.vectorize.prefetch_distance`). The D3Q19 sweep has 19 read and
 23 write streams, more than the hardware prefetcher of the SpacemiT X60 follows; without
 help every cache miss costs a full DRAM latency (docs/notes3 in the outer repository).
+
+--streaming-pattern aa streams in place with lbmpy's AA pattern instead of pull: one PDF field
+instead of two, alternating even and odd sweeps (StreamCollideEven/StreamCollideOdd), and
+SweepgenLbmCPU.cpp must be compiled with SWEEPGEN_LBM_AA (see CMakeLists.txt). The sweep then
+moves about 30% fewer bytes per cell and has 23 instead of 42 memory streams.
+
+--split BY,GM,GP (explicit variant with the aa pattern) also generates the direction-split
+stream/collide of lbm_split.py: blocks of BY rows, moments in passes of GM directions, collision
+in passes of GP opposite-direction pairs, so that only a few memory streams are live at a time.
+SweepgenLbmCPU.cpp must then be compiled with SWEEPGEN_LBM_SPLIT, and runs it instead of
+StreamCollideEven/StreamCollideOdd.
+
+Every variant also contains the stream/collide sweeps without density/velocity output
+(LbmBulk's output_free_sweeps): 4 fewer store streams. SweepgenLbmCPU.cpp uses them for every
+time step except the last one when run with SWEEPGEN_LBM_OUTPUT=last.
 """
 
 import argparse
@@ -43,7 +58,7 @@ from lbmpy import LBStencil, Stencil, LBMConfig, LBMOptimisation, Method
 
 from pystencilssfg import SourceFileGenerator
 from sweepgen import Sweep
-from sweepgen.build_config import DEBUG
+from sweepgen.build_config import DEBUG, get_build_config
 from sweepgen.symbolic import cell
 from sweepgen.prefabs import LbmBulk
 
@@ -55,6 +70,8 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
     parser.add_argument("--variant", choices=("scalar", "autovec", "explicit"), required=True)
     parser.add_argument("--cse-global", action="store_true")
     parser.add_argument("--prefetch-distance", type=int, default=None)
+    parser.add_argument("--streaming-pattern", choices=("pull", "aa"), default="pull")
+    parser.add_argument("--split", default=None, help="BY,GM,GP: direction-split AA stream/collide")
     #   For generating the explicit variant on another machine (e.g. RISCV_RVV on x86)
     parser.add_argument("--explicit-target", default="CurrentCPU")
     args = parser.parse_args(sfg.context.argv)
@@ -82,6 +99,7 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
         method=Method.SRT,
         compressible=True,
         relaxation_rate=sp.Symbol("omega"),
+        streaming_pattern=args.streaming_pattern,
     )
     #   LbmBulk's own default, plus the optional global CSE
     lbm_optimisation = LBMOptimisation(
@@ -90,8 +108,37 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
         field_layout="fzyx",
     )
 
-    lbm_bulk = LbmBulk(sfg, "LBM", lbm_config, lbm_optimisation, lbm_gen_config)
+    #   Also the sweeps without density/velocity output, for the time steps whose macroscopic
+    #   values are not needed (SweepgenLbmCPU.cpp: SWEEPGEN_LBM_OUTPUT=last)
+    lbm_bulk = LbmBulk(sfg, "LBM", lbm_config, lbm_optimisation, lbm_gen_config, output_free_sweeps=True)
     sfg.generate(lbm_bulk)
+
+    if args.split:
+        if args.variant != "explicit" or args.streaming_pattern != "aa":
+            raise ValueError("--split needs the explicit variant and --streaming-pattern aa")
+        #   lbm_split.py lives next to this script
+        from lbm_split import SplitAA
+
+        by, gm, gp = (int(x) for x in args.split.split(","))
+        split_config = get_build_config(sfg).get_pystencils_config()
+        split_config.override(lbm_gen_config)
+        #   The driver passes each block's extent: no ghost layers to subtract
+        split_config.ghost_layers = 0
+        dtype = split_config.get_option("default_dtype")
+        ctype = "double" if "64" in str(dtype) else "float"
+        split = SplitAA(lbm_config, str(dtype), by, gm, gp, split_config)
+        kernels = split.kernels()
+        unique = SplitAA.unique_kernels(kernels)
+        for header in sorted(set().union(*(k.required_headers for k in unique)) | {"<cstdint>", "<vector>"}):
+            sfg.include(header.strip('"'))
+        decl, definition = split.driver_code("streamCollide", ctype, kernels)
+        with sfg.namespace("LBM_SPLIT"):
+            sfg.code(
+                "/** Direction-split AA stream/collide of a block (lbm_split.py): f, rho, u point at the block's",
+                "    interior cell (0, 0, 0); strides in elements; odd: odd time step; output: write rho and u */",
+                decl,
+            )
+            sfg.code("namespace {", *(k.get_c_code() for k in unique), "} // namespace", definition, impl=True)
 
     #   Initial state of the DoubleShearLayer example. It is not timed, so it is always
     #   generated as plain code (the vectorizers do not support tanh or Piecewise).
