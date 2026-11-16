@@ -47,6 +47,7 @@ sweepgen_lbm_variant( SweepgenLbmCPU_explicit_pf explicit --prefetch-distance=12
 sweepgen_lbm_variant( SweepgenLbmCPU_explicit_cse_pf explicit --cse-global --prefetch-distance=128 )
 
 sweepgen_lbm_variant( SweepgenLbmCPU_scalar_cse_aa scalar --cse-global --streaming-pattern=aa )
+sweepgen_lbm_variant( SweepgenLbmCPU_autovec_cse_aa autovec --cse-global --streaming-pattern=aa )
 sweepgen_lbm_variant( SweepgenLbmCPU_explicit_cse_aa explicit --cse-global --streaming-pattern=aa )
 sweepgen_lbm_variant( SweepgenLbmCPU_explicit_cse_aa_pf explicit --cse-global --streaming-pattern=aa
                       --prefetch-distance=128 )
