@@ -15,7 +15,7 @@
 
 The bulk LBM sweeps are generated exactly as in ../SweepgenLbmCPU/SweepgenLbmCPU.py: D3Q19, SRT,
 compressible, relaxation rate `omega`, in the variants scalar / autovec / explicit, with the same
-options --cse-global, --prefetch-distance, --streaming-pattern and --split (the split module is
+options --cse-global, --prefetch-distance, --rvv-lmul, --streaming-pattern and --split (the split module is
 ../SweepgenLbmCPU/lbm_split.py itself, not a copy). See that file for what each option does.
 
 The lid-driven cavity adds two sparse boundary sweeps (sweepgen `SparseBoundary` with lbmpy's
@@ -59,8 +59,10 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
     parser.add_argument("--prefetch-distance", type=int, default=None)
     parser.add_argument("--streaming-pattern", choices=("pull", "aa"), default="pull")
     parser.add_argument("--split", default=None, help="BY,GM,GP: direction-split AA stream/collide")
-    #   For generating the explicit variant on another machine (e.g. RISCV_RVV on x86)
-    parser.add_argument("--explicit-target", default="CurrentCPU")
+    #   Default: the build's CPU target, which on RISC-V is the RVV target of the vector length CMake
+    #   measured. Set it to generate the explicit variant for another machine (e.g. RISCV_RVV128 on x86).
+    parser.add_argument("--explicit-target", default=None)
+    parser.add_argument("--rvv-lmul", type=int, default=None, help="RVV register grouping: 1, 2 or 4")
     args = parser.parse_args(sfg.context.argv)
 
     Sweep.use_v8core_fields()
@@ -69,14 +71,17 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
 
     #   ---- Bulk sweeps: identical to SweepgenLbmCPU.py ----------------------------------------
     if args.variant == "explicit":
-        lbm_gen_config = ps.CreateKernelConfig(target=ps.Target[args.explicit_target])
+        target = ps.Target[args.explicit_target] if args.explicit_target else get_build_config(sfg).target
+        lbm_gen_config = ps.CreateKernelConfig(target=target)
         lbm_gen_config.cpu.vectorize.enable = True
         #   waLBerla fields are fzyx with x fastest, so the innermost loop has stride 1
         lbm_gen_config.cpu.vectorize.assume_inner_stride_one = True
         if args.prefetch_distance:
             lbm_gen_config.cpu.vectorize.prefetch_distance = args.prefetch_distance
-    elif args.prefetch_distance:
-        raise ValueError("--prefetch-distance needs the explicit variant")
+        if args.rvv_lmul:
+            lbm_gen_config.cpu.vectorize.rvv_lmul = args.rvv_lmul
+    elif args.prefetch_distance or args.rvv_lmul:
+        raise ValueError("--prefetch-distance and --rvv-lmul need the explicit variant")
     else:
         lbm_gen_config = ps.CreateKernelConfig(target=ps.Target.GenericCPU)
 

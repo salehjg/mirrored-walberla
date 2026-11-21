@@ -67,6 +67,10 @@ class WalberlaBuildConfig:
     likwid_enabled: bool
     """Value of ``WALBERLA_BUILD_WITH_LIKWID_MARKERS``"""
 
+    riscv_vlen: int | None = None
+    """Value of ``WALBERLA_RISCV_VLEN``: the vector register width (128 or 256) of a RISC-V build
+    machine with the V extension, measured at configure time; `None` elsewhere."""
+
     override: ConfigOverrides = field(default_factory=ConfigOverrides)
     """Override code generator options that would otherwise be inferred from the build system."""
 
@@ -101,6 +105,12 @@ class WalberlaBuildConfig:
             #  CPU target
             if self.optimize_for_localhost:
                 target = Target.CurrentCPU
+                #   pystencils cannot measure the RVV vector length itself (`CurrentCPU` assumes
+                #   256), but CMake did
+                if self.riscv_vlen == 128:
+                    target = Target.RISCV_RVV128
+                elif self.riscv_vlen == 256:
+                    target = Target.RISCV_RVV256
             else:
                 target = Target.GenericCPU
 

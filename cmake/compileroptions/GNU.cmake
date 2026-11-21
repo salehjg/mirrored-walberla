@@ -21,11 +21,12 @@ endif()
 # architecture optimization
 if(WALBERLA_OPTIMIZE_FOR_LOCALHOST)
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "riscv64")
-    # GCC rejects -march=native on RISC-V. Mirror pystencils' `Target.CurrentCPU`:
-    # with the V extension, use the flags of its RVV backend (VLS code for VLEN = 256).
+    # GCC rejects -march=native on RISC-V. With the V extension, use the flags of pystencils'
+    # RVV backend: VLS code for the machine's vector length (RiscvVlen.cmake measures it).
     file(STRINGS /proc/cpuinfo _riscv_isa REGEX "^isa" LIMIT_COUNT 1)
     if(_riscv_isa MATCHES "rv64[a-z]*v")
-      add_flag(CMAKE_CXX_FLAGS "-march=rv64gcv_zvl256b")
+      include(${CMAKE_CURRENT_LIST_DIR}/RiscvVlen.cmake)
+      add_flag(CMAKE_CXX_FLAGS "-march=rv64gcv_zvl${WALBERLA_RISCV_VLEN}b")
     else()
       add_flag(CMAKE_CXX_FLAGS "-march=rv64gc")
     endif()

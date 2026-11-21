@@ -19,8 +19,10 @@ separate executables and compared on the same machine:
 
   scalar, autovec  Target.GenericCPU: plain C++ loops. The two variants differ only in
                    their compiler flags (see CMakeLists.txt).
-  explicit         Target.CurrentCPU with the pystencils vectorizer enabled: explicit SIMD
-                   intrinsics for the host, i.e. RVV on the SpacemiT K1 and AVX on x86.
+  explicit         The build's CPU target with the pystencils vectorizer enabled: explicit SIMD
+                   intrinsics for the host, i.e. RVV on RISC-V (for the vector length CMake
+                   measured: RISCV_RVV256 on the SpacemiT K1, RISCV_RVV128 on the Sophgo SG2044)
+                   and AVX on x86.
                    sweepgen never enables vectorization by itself, so it is requested here,
                    as a user of the AVX backend would.
 
@@ -32,6 +34,10 @@ repeats from scalar code, but GCC does not remove repeated RVV intrinsic calls.
 access N bytes ahead (`cpu.vectorize.prefetch_distance`). The D3Q19 sweep has 19 read and
 23 write streams, more than the hardware prefetcher of the SpacemiT X60 follows; without
 help every cache miss costs a full DRAM latency (docs/notes3 in the outer repository).
+
+--rvv-lmul L (explicit variant on RISC-V only) groups L vector registers per vector
+(`cpu.vectorize.rvv_lmul`, 1, 2 or 4): fewer loop iterations, fewer registers. A tuning knob;
+the variants of CMakeLists.txt use the default 1.
 
 --streaming-pattern aa streams in place with lbmpy's AA pattern instead of pull: one PDF field
 instead of two, alternating even and odd sweeps (StreamCollideEven/StreamCollideOdd), and
@@ -72,8 +78,10 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
     parser.add_argument("--prefetch-distance", type=int, default=None)
     parser.add_argument("--streaming-pattern", choices=("pull", "aa"), default="pull")
     parser.add_argument("--split", default=None, help="BY,GM,GP: direction-split AA stream/collide")
-    #   For generating the explicit variant on another machine (e.g. RISCV_RVV on x86)
-    parser.add_argument("--explicit-target", default="CurrentCPU")
+    #   Default: the build's CPU target, which on RISC-V is the RVV target of the vector length CMake
+    #   measured. Set it to generate the explicit variant for another machine (e.g. RISCV_RVV128 on x86).
+    parser.add_argument("--explicit-target", default=None)
+    parser.add_argument("--rvv-lmul", type=int, default=None, help="RVV register grouping: 1, 2 or 4")
     args = parser.parse_args(sfg.context.argv)
 
     Sweep.use_v8core_fields()
@@ -81,15 +89,18 @@ with SourceFileGenerator(keep_unknown_argv=True) as sfg:
 
     #   Code generator config of the timed LBM sweeps
     if args.variant == "explicit":
-        lbm_gen_config = ps.CreateKernelConfig(target=ps.Target[args.explicit_target])
+        target = ps.Target[args.explicit_target] if args.explicit_target else get_build_config(sfg).target
+        lbm_gen_config = ps.CreateKernelConfig(target=target)
         lbm_gen_config.cpu.vectorize.enable = True
         #   waLBerla fields are fzyx with x fastest, so the innermost loop has stride 1:
         #   the same contract the AVX backend relies on
         lbm_gen_config.cpu.vectorize.assume_inner_stride_one = True
         if args.prefetch_distance:
             lbm_gen_config.cpu.vectorize.prefetch_distance = args.prefetch_distance
-    elif args.prefetch_distance:
-        raise ValueError("--prefetch-distance needs the explicit variant")
+        if args.rvv_lmul:
+            lbm_gen_config.cpu.vectorize.rvv_lmul = args.rvv_lmul
+    elif args.prefetch_distance or args.rvv_lmul:
+        raise ValueError("--prefetch-distance and --rvv-lmul need the explicit variant")
     else:
         lbm_gen_config = ps.CreateKernelConfig(target=ps.Target.GenericCPU)
 

@@ -22,6 +22,7 @@ def project_info() -> WalberlaBuildConfig:
         cuda_enabled=cmake_parse_bool("${WALBERLA_BUILD_WITH_CUDA}"),
         hip_enabled=cmake_parse_bool("${WALBERLA_BUILD_WITH_HIP}"),
         likwid_enabled=cmake_parse_bool("${WALBERLA_BUILD_WITH_LIKWID_MARKERS}"),
+        riscv_vlen=int("${WALBERLA_RISCV_VLEN}") if "${WALBERLA_RISCV_VLEN}" else None,
     )
 
 
